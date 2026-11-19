@@ -1,0 +1,20 @@
+# Optional: builds FindIt and its installer in the cloud (no Python needed on your PC).
+# Put this project in a GitHub repository, then open Actions > "Build FindIt" > Run workflow.
+name: Build FindIt
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install -r requirements.txt
+      - run: python make_icon.py
+      - run: python -m PyInstaller --noconfirm --clean --onedir --windowed --name FindIt --icon findit.ico --add-data "findit.ico;." --add-data "findit.png;." --collect-all customtkinter --collect-submodules watchdog --collect-submodules pystray --collect-submodules send2trash --collect-all pymupdf findit.py
+      - run: choco install innosetup -y
+      - run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FindIt-Setup
+          path: Output/FindIt-Setup.exe
