@@ -1,5 +1,5 @@
 """FindIt engine: index (NTFS instant mode + fast parallel fallback), search syntax, settings, watcher."""
-import os, sys, re, json, time, stat, pickle, threading, queue, string, fnmatch, datetime, platform, struct, heapq
+import os, sys, re, json, time, stat, marshal, threading, queue, string, fnmatch, datetime, platform, struct, heapq
 from concurrent.futures import ThreadPoolExecutor
 
 APP_NAME = "FindIt"
@@ -24,7 +24,7 @@ def data_dir():
 # ----------------------------------------------------------------------------
 DEFAULTS = {
     "theme": "system", "live": True, "preview": True, "view": "details", "sidebar": True,
-    "sort_key": "name", "sort_rev": False, "result_limit": 5000, "double_click": "open",
+    "sort_key": "name", "sort_rev": False, "result_limit": 50000, "double_click": "open",
     "rescan": "auto", "rescan_hours": 12,
     "extra_locations": [], "skip_drives": [], "index_removable": True, "auto_new_drives": True,
     "exclude_dirs": [], "exclude_ext": [], "skip_hidden": False,
@@ -32,6 +32,7 @@ DEFAULTS = {
     "saved": [], "bookmarks": [], "history": [],
     "admin": False, "admin_asked": False, "start_with_windows": False, "start_minimized": False,
     "tray": True, "close_to_tray": False, "hotkey": True, "notify": True,
+    "glass": "acrylic" if IS_WIN else "off", "opacity": 0.97, "geometry": "", "col_widths": {},
 }
 
 
@@ -464,6 +465,18 @@ class Query:
         self.preds.append((lambda it, f=f: not f(it)) if neg else f)
 
 
+def highlight_terms(text):
+    """plain words of a search (what to highlight in file names)"""
+    out = []
+    for tok in _TOKEN.findall(text or ""):
+        if tok[0] in "!-" or re.match(r"^[A-Za-z]+:", tok) and tok.split(":")[0].lower() in _FUNCS:
+            continue
+        t = tok.strip('"').lower()
+        if t and not any(c in t for c in "*?|\\/"):
+            out.append(t)
+    return out
+
+
 SORT_KEYS = {
     "name": lambda i: i[1],
     "path": lambda i: os.path.dirname(i[2]).lower(),
@@ -780,8 +793,7 @@ class Index:
             with self.lock:
                 items = list(self.map.values())
             with open(tmp, "wb") as f:
-                pickle.dump({"v": 2, "time": self.cache_time or time.time(), "items": items},
-                            f, protocol=pickle.HIGHEST_PROTOCOL)
+                marshal.dump({"v": 3, "time": self.cache_time or time.time(), "items": items}, f)
             os.replace(tmp, self.cache_path)
         except Exception:
             pass
@@ -791,8 +803,8 @@ class Index:
             return False
         try:
             with open(self.cache_path, "rb") as f:
-                d = pickle.load(f)
-            if not isinstance(d, dict) or d.get("v") != 2:
+                d = marshal.load(f)
+            if not isinstance(d, dict) or d.get("v") != 3:
                 return False
             with self.lock:
                 self.map = {it[2]: it for it in d["items"]}
@@ -809,7 +821,7 @@ class Index:
 
     # ---- search
     def search(self, text, category="All", case=False, regex=False, in_path=False, scope=None,
-               sort_key="name", sort_rev=False, limit=5000, cats=None):
+               sort_key="name", sort_rev=False, limit=5000, cats=None, cancel=None):
         """-> (rows, total, error)"""
         cats = cats or CATEGORIES
         with self.lock:
@@ -837,7 +849,11 @@ class Index:
             pf = [p[0] for p in prefixes]
             is_dir_cat = cat == "dir"
             matches = []
+            n = 0
             for it in items:
+                n += 1
+                if cancel is not None and not (n & 0x3FFF) and cancel():
+                    return [], 0, None
                 if cat is not None:
                     if is_dir_cat:
                         if not it[3]:
@@ -869,11 +885,21 @@ class Index:
 
 
 class Watcher:
-    """Keeps the index current using Windows file-change notifications (watchdog)."""
+    """Keeps the index current using Windows file-change notifications (watchdog).
+    Events are collected and applied once a second, and noisy folders are ignored,
+    so busy disks do not slow FindIt down."""
+
+    NOISY = ("\\appdata\\local\\temp", "\\windows\\temp", "\\$recycle.bin", "\\system volume information",
+             "\\.git\\", "\\windows\\prefetch", "\\inetcache", "\\windows\\logs", "\\$windows.~bt",
+             "/.cache/", "/.git/")
 
     def __init__(self, index):
         self.index = index
         self.observer = None
+        self.ops, self.mod = [], set()
+        self.plock = threading.Lock()
+        self._stop = threading.Event()
+        self._flusher = None
 
     @staticmethod
     def available():
@@ -884,8 +910,29 @@ class Watcher:
             return False
 
     def _ignored(self, p):
-        parts = set(p.lower().replace("\\", "/").split("/"))
-        return bool(parts & SKIP_DIRS)
+        low = p.lower() + ("\\" if IS_WIN else "/")
+        return any(n in low for n in self.NOISY)
+
+    def _push(self, kind, a, b=None, is_dir=False):
+        with self.plock:
+            self.ops.append((kind, a, b, is_dir))
+
+    def _flush(self):
+        while not self._stop.wait(1.0):
+            with self.plock:
+                ops, mod = self.ops, self.mod
+                self.ops, self.mod = [], set()
+            for kind, a, b, is_dir in ops:
+                if kind == "c":
+                    self.index.add(a, deep=is_dir)
+                elif kind == "d":
+                    self.index.remove(a)
+                else:
+                    self.index.remove(a)
+                    self.index.add(b, deep=is_dir)
+            for p in mod:
+                if p in self.index.map:
+                    self.index.add(p)
 
     def start(self, roots=None):
         if self.observer or not self.available():
@@ -897,16 +944,17 @@ class Watcher:
         class H(FileSystemEventHandler):
             def on_created(self, e):
                 if not outer._ignored(e.src_path):
-                    outer.index.add(e.src_path, deep=e.is_directory)
+                    outer._push("c", e.src_path, None, e.is_directory)
             def on_deleted(self, e):
-                outer.index.remove(e.src_path)
+                if not outer._ignored(e.src_path):
+                    outer._push("d", e.src_path)
             def on_moved(self, e):
-                outer.index.remove(e.src_path)
-                if not outer._ignored(e.dest_path):
-                    outer.index.add(e.dest_path, deep=e.is_directory)
+                if not outer._ignored(e.src_path) or not outer._ignored(e.dest_path):
+                    outer._push("m", e.src_path, e.dest_path, e.is_directory)
             def on_modified(self, e):
                 if not e.is_directory and not outer._ignored(e.src_path):
-                    outer.index.add(e.src_path)
+                    with outer.plock:
+                        outer.mod.add(e.src_path)
 
         obs = Observer()
         n = 0
@@ -924,10 +972,14 @@ class Watcher:
         except Exception:
             return False
         self.observer = obs
+        self._stop.clear()
+        self._flusher = threading.Thread(target=self._flush, daemon=True)
+        self._flusher.start()
         return True
 
     def stop(self):
         obs, self.observer = self.observer, None
+        self._stop.set()
         if obs:
             try:
                 obs.stop()

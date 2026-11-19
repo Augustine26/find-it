@@ -1,6 +1,6 @@
 ; Inno Setup script - packs dist\FindIt\ into one FindIt-Setup.exe
 #define AppName "FindIt"
-#define AppVersion "2.0.0"
+#define AppVersion "2.1.0"
 
 [Setup]
 AppId={{B7E3C1A4-5F2D-4E88-9A31-F1ND17000001}

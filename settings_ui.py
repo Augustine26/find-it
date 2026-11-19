@@ -78,6 +78,20 @@ class SettingsWindow(ctk.CTkToplevel):
         names = {"system": "System", "light": "Light", "dark": "Dark"}
         self._menu(p, "Theme", list(names.values()), names.get(self.s["theme"], "System"),
                    lambda v: a.apply_theme(v.lower()))
+        if IS_WIN:
+            gl = {"off": "Off", "acrylic": "Acrylic (frosted glass)", "mica": "Mica (soft tint)"}
+            self._menu(p, "Glass effect", list(gl.values()), gl.get(self.s["glass"], gl["acrylic"]),
+                       lambda v: (self._set("glass", {x: k for k, x in gl.items()}[v]), a.apply_glass()))
+            row = ctk.CTkFrame(p, fg_color="transparent")
+            row.pack(fill="x", pady=4, padx=4)
+            ctk.CTkLabel(row, text="Window transparency", font=(FONT, 13), text_color=THEME["text"], width=210,
+                         anchor="w").pack(side="left")
+            sl = ctk.CTkSlider(row, from_=0.80, to=1.0, number_of_steps=20, width=220, progress_color=THEME["accent"],
+                               command=lambda v: (self._set("opacity", round(float(v), 2)), a.apply_glass()))
+            sl.set(float(self.s["opacity"]))
+            sl.pack(side="left")
+            self._note(p, "Glass shows a blurred copy of your wallpaper through the gaps between panels. "
+                          "Choose Off if it looks wrong on your PC.")
         views = {"details": "Details list", "small": "Small thumbnails", "medium": "Medium thumbnails",
                  "large": "Large thumbnails", "xlarge": "Extra large thumbnails"}
         self._menu(p, "Default view", list(views.values()), views.get(self.s["view"], "Details list"),

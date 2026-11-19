@@ -24,7 +24,7 @@ def _quote(parts):
 
 def new_window(args=()):
     try:
-        subprocess.Popen(launch_command() + list(args), close_fds=True)
+        subprocess.Popen(launch_command() + ['--new'] + list(args), close_fds=True)
     except Exception:
         pass
 
