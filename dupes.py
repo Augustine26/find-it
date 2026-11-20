@@ -99,16 +99,16 @@ class DupWindow(ctk.CTkToplevel):
         opt = ctk.CTkFrame(self, fg_color="transparent")
         opt.grid(row=1, column=0, sticky="ew", padx=20, pady=(4, 8))
         self.scope = ctk.CTkSegmentedButton(opt, values=["Current results", "Whole index"], font=(FONT, 12),
-                                            selected_color=THEME["accent"], unselected_color=THEME["card"],
-                                            text_color=THEME["text"], fg_color=THEME["card"])
+                                            selected_color=THEME["accent"], unselected_color=THEME["hover"],
+                                            text_color=THEME["text"], fg_color=THEME["hover"])
         self.scope.set("Current results")
         self.scope.pack(side="left")
         self.mode = ctk.CTkOptionMenu(opt, values=["Same content (accurate)", "Same name and size (fast)"],
-                                      width=210, font=(FONT, 12), fg_color=THEME["card"],
+                                      width=210, font=(FONT, 12), fg_color=THEME["hover"],
                                       button_color=THEME["stroke"], text_color=THEME["text"])
         self.mode.pack(side="left", padx=10)
         self.minsize_menu = ctk.CTkOptionMenu(opt, values=["Any size", "Over 100 KB", "Over 1 MB", "Over 10 MB", "Over 100 MB"],
-                                              width=130, font=(FONT, 12), fg_color=THEME["card"],
+                                              width=130, font=(FONT, 12), fg_color=THEME["hover"],
                                               button_color=THEME["stroke"], text_color=THEME["text"])
         self.minsize_menu.pack(side="left")
         self.go = ctk.CTkButton(opt, text="Scan", width=90, fg_color=THEME["accent"], font=(FONT, 13, "bold"),
@@ -142,7 +142,7 @@ class DupWindow(ctk.CTkToplevel):
         bar.grid(row=3, column=0, sticky="ew", padx=20, pady=(8, 14))
         def btn(text, cmd, **kw):
             b = ctk.CTkButton(bar, text=text, command=cmd, font=(FONT, 12), height=34,
-                              fg_color=kw.pop("fg", THEME["card"]), hover_color=THEME["stroke"],
+                              fg_color=kw.pop("fg", THEME["hover"]), hover_color=THEME["stroke"],
                               text_color=kw.pop("tc", THEME["text"]), border_width=1, border_color=THEME["stroke"], **kw)
             b.pack(side="left", padx=(0, 8))
             return b

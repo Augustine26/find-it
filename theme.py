@@ -9,19 +9,40 @@ FONT = "Segoe UI Variable Text" if IS_WIN else "Segoe UI"
 KEY = "#010203"            # colour that becomes see-through when the glass effect is on
 RADIUS = 16
 
-THEME = {   # (light, dark)
-    "bg": ("#E8ECF4", "#17181C"),
-    "card": ("#FAFBFE", "#25262C"),
-    "stroke": ("#FFFFFF", "#6E7080"),
-    "text": ("#1B1D23", "#F4F5F8"),
-    "sub": ("#5E6472", "#A4A8B5"),
-    "hover": ("#E3E8F2", "#363842"),
-    "soft": ("#DCEAFB", "#203A5A"),
-    "mark": ("#FFE9A6", "#5E4F14"),
-    "accent": "#0A64D8",
-    "accent_hover": "#0853B3",
-    "danger": "#C42B1C",
+PALETTES = {
+    # soft / neumorphic: surface, panels and page share one colour; depth comes from light + dark shadows
+    "soft": {
+        "bg": ("#E7EBEF", "#2A2E35"), "card": ("#E7EBEF", "#2A2E35"),
+        "stroke": ("#D2D8E0", "#3B404B"), "text": ("#1F2937", "#E8EAF0"), "sub": ("#6B7280", "#98A0AE"),
+        "hover": ("#DCE1E8", "#343944"), "soft": ("#D3E2F6", "#27405F"), "mark": ("#FFE9A6", "#5E4F14"),
+        "hi": ("#FFFFFF", "#3A3F4B"), "sh": ("#B7C0CE", "#1B1E23"),
+        "accent": "#0072FF", "accent_hover": "#0060D6", "accent2": "#00C6FF", "danger": "#C42B1C",
+    },
+    "glass": {
+        "bg": ("#E8ECF4", "#17181C"), "card": ("#FAFBFE", "#25262C"),
+        "stroke": ("#FFFFFF", "#6E7080"), "text": ("#1B1D23", "#F4F5F8"), "sub": ("#5E6472", "#A4A8B5"),
+        "hover": ("#E3E8F2", "#363842"), "soft": ("#DCEAFB", "#203A5A"), "mark": ("#FFE9A6", "#5E4F14"),
+        "hi": ("#FFFFFF", "#3A3F4B"), "sh": ("#B7C0CE", "#1B1E23"),
+        "accent": "#0A64D8", "accent_hover": "#0853B3", "accent2": "#00A3FF", "danger": "#C42B1C",
+    },
 }
+THEME = dict(PALETTES["soft"])
+STYLE = "soft"
+
+
+def set_style(name):
+    """choose 'soft' or 'glass' (before any window is created); THEME is updated in place"""
+    global STYLE
+    STYLE = name if name in PALETTES else "soft"
+    THEME.clear()
+    THEME.update(PALETTES[STYLE])
+
+
+def hex_bgr(h):
+    h = h.lstrip("#")
+    return int(h[4:6] + h[2:4] + h[0:2], 16)
+
+
 _glass = {"on": False}
 
 
@@ -35,7 +56,8 @@ def pick(key):
 
 
 def root_bg(settings=None):
-    return KEY if (IS_WIN and settings is not None and settings["glass"] != "off") else THEME["bg"]
+    glass = STYLE == "glass" and IS_WIN and settings is not None and settings["glass"] != "off"
+    return KEY if glass else THEME["bg"]
 
 
 def panel_kw(radius=RADIUS):
@@ -75,7 +97,7 @@ def win11_titlebar(window, glass=False):
         dwm = ctypes.windll.dwmapi
         dwm.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(dark)), 4)
         if not glass:
-            bg = 0x1C1817 if dark else 0xF4ECE8     # BGR of the window colours
+            bg = hex_bgr(pick("bg"))
             dwm.DwmSetWindowAttribute(hwnd, 35, ctypes.byref(ctypes.c_int(bg)), 4)
     except Exception:
         pass

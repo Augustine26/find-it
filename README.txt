@@ -1,4 +1,4 @@
-FindIt 2.1 - instant file search for Windows 11 (glass design)
+FindIt 2.2 - instant file search for Windows 11 (soft design)
 
 MAKE THE PROGRAM
   1. Install Python from python.org (tick "Add python.exe to PATH")
@@ -63,3 +63,10 @@ FASTER (new in 2.1)
 ALSO NEW
   Matching letters are highlighted in file names. Drag column borders to resize (remembered).
   Window size and position are remembered. Empty list shows "Indexing..." or "No results".
+
+SOFT DESIGN (new in 2.2, now the default)
+  The embossed "soft UI" look: panels and buttons rise out of the surface with light and dark shadows,
+  the search box and the pressed tab sink into it, and the active filter glows with a blue gradient.
+  Light and dark themes both supported (the half-moon button).
+  Settings > General > Design lets you choose Soft or Glass (needs a restart; FindIt offers to restart).
+  Narrow windows hide the Created and Type columns automatically so file names stay readable.

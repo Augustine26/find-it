@@ -43,7 +43,7 @@ class VirtualDetails(ctk.CTkFrame):
         self.grid_rowconfigure(1, weight=1)
         self.hd = tk.Canvas(self, height=self.HEAD, highlightthickness=0, bd=0)
         self.cv = tk.Canvas(self, highlightthickness=0, bd=0, yscrollincrement=self.ROW)
-        self.sb = ctk.CTkScrollbar(self, command=self.cv.yview)
+        self.sb = ctk.CTkScrollbar(self, command=self.cv.yview, fg_color="transparent", button_color=THEME["stroke"], button_hover_color=THEME["sub"])
         self.cv.configure(yscrollcommand=self._on_scroll)
         self.hd.grid(row=0, column=0, sticky="ew", padx=(8, 0), pady=(6, 0))
         self.cv.grid(row=1, column=0, sticky="nsew", padx=(8, 0), pady=(0, 6))
@@ -92,12 +92,18 @@ class VirtualDetails(ctk.CTkFrame):
         W = max(self.cv.winfo_width(), 300)
         left = 12
         avail = W - left - 8
-        fixed = sum(self.w[k] for k, _t, _w, f in self.COLS if not f)
-        base = sum(self.w[k] for k, _t, _w, f in self.COLS if f)
-        scale = max(avail - fixed, 160) / base
+        hide = set()
+        if avail < 930:
+            hide.add("created")
+        if avail < 790:
+            hide.add("type")
+        cols = [c for c in self.COLS if c[0] not in hide]
+        fixed = sum(self.w[k] for k, _t, _w, f in cols if not f)
+        base = sum(self.w[k] for k, _t, _w, f in cols if f)
+        scale = max(avail - fixed, 300) / base
         xs, ws, x = {}, {}, left
-        for k, _t, _w, f in self.COLS:
-            wk = max(80, int(self.w[k] * scale)) if f else self.w[k]
+        for k, _t, _w, f in cols:
+            wk = max(110, int(self.w[k] * scale)) if f else self.w[k]
             xs[k], ws[k] = x, wk
             x += wk
         return xs, ws, scale
@@ -109,17 +115,19 @@ class VirtualDetails(ctk.CTkFrame):
         sub, stroke = theme.pick("sub"), theme.pick("hover")
         key, rev = self.sort
         for k, title, _w, _f in self.COLS:
+            if k not in xs:
+                continue
             arrow = (" ▼" if rev else " ▲") if k == key else ""
             hd.create_text(xs[k] + (44 if k == "name" else 10), self.HEAD // 2, text=title + arrow, anchor="w",
                            fill=theme.pick("text") if k == key else sub, font=self.bold)
-            if k != "created":
+            if k != list(xs)[-1]:
                 hd.create_line(xs[k] + ws[k], 9, xs[k] + ws[k], self.HEAD - 9, fill=stroke)
         hd.create_line(0, self.HEAD - 1, 4000, self.HEAD - 1, fill=stroke)
 
     # ---- header interaction (sort / resize)
     def _edge(self, x):
         xs, ws, _ = self._geom()
-        for k, _t, _w, _f in self.COLS:
+        for k in xs:
             if abs(x - (xs[k] + ws[k])) <= 4:
                 return k
         return None
@@ -135,7 +143,7 @@ class VirtualDetails(ctk.CTkFrame):
             self._drag = (k, e.x, self.w[k], scale if flex else 1.0)
             return
         xs, ws, _ = self._geom()
-        for k, _t, _w, _f in self.COLS:
+        for k in xs:
             if xs[k] <= e.x < xs[k] + ws[k]:
                 self.app.sort_by(k)
                 return
@@ -245,10 +253,12 @@ class VirtualDetails(ctk.CTkFrame):
                            anchor="w", fill=sub_c, font=self.font)
             cv.create_text(xs["size"] + ws["size"] - 12, cy, text="" if is_dir else human_size(size), anchor="e",
                            fill=text_c, font=self.font)
-            cv.create_text(xs["type"] + 10, cy, text=self._fit(type_name(ext, is_dir), ws["type"] - 14),
-                           anchor="w", fill=sub_c, font=self.font)
+            if "type" in xs:
+                cv.create_text(xs["type"] + 10, cy, text=self._fit(type_name(ext, is_dir), ws["type"] - 14),
+                               anchor="w", fill=sub_c, font=self.font)
             cv.create_text(xs["date"] + 10, cy, text=human_date(mt), anchor="w", fill=sub_c, font=self.font)
-            cv.create_text(xs["created"] + 10, cy, text=human_date(ct), anchor="w", fill=sub_c, font=self.font)
+            if "created" in xs:
+                cv.create_text(xs["created"] + 10, cy, text=human_date(ct), anchor="w", fill=sub_c, font=self.font)
 
     # ---- interaction
     def _hit(self, e):
@@ -324,7 +334,7 @@ class LiteScroll(tk.Frame):
         self.cv = tk.Canvas(self, highlightthickness=0, bd=0)
         self.inner = tk.Frame(self.cv, bd=0, highlightthickness=0)
         self.win = self.cv.create_window(0, 0, window=self.inner, anchor="nw")
-        self.sb = ctk.CTkScrollbar(self, command=self.cv.yview, width=10)
+        self.sb = ctk.CTkScrollbar(self, command=self.cv.yview, width=10, fg_color="transparent", button_color=THEME["stroke"], button_hover_color=THEME["sub"])
         self.cv.configure(yscrollcommand=self.sb.set)
         self.cv.pack(side="left", fill="both", expand=True)
         self.inner.bind("<Configure>", self._inner)
@@ -408,7 +418,7 @@ class ThumbView(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
         self.cv = tk.Canvas(self, highlightthickness=0, bd=0, yscrollincrement=max(8, self.th // 4))
-        self.sb = ctk.CTkScrollbar(self, command=self._yview)
+        self.sb = ctk.CTkScrollbar(self, command=self._yview, fg_color="transparent", button_color=THEME["stroke"], button_hover_color=THEME["sub"])
         self.cv.configure(yscrollcommand=self._on_scroll)
         self.cv.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=8)
         self.sb.grid(row=0, column=1, sticky="ns", pady=6, padx=(0, 4))

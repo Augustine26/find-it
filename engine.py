@@ -32,7 +32,7 @@ DEFAULTS = {
     "saved": [], "bookmarks": [], "history": [],
     "admin": False, "admin_asked": False, "start_with_windows": False, "start_minimized": False,
     "tray": True, "close_to_tray": False, "hotkey": True, "notify": True,
-    "glass": "acrylic" if IS_WIN else "off", "opacity": 0.97, "geometry": "", "col_widths": {},
+    "ui_style": "soft", "glass": "acrylic" if IS_WIN else "off", "opacity": 0.97, "geometry": "", "col_widths": {},
 }
 
 

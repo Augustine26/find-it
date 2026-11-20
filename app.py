@@ -10,6 +10,7 @@ from engine import (highlight_terms, Settings, Index, Watcher, IS_WIN, data_dir,
 from thumbs import THUMB_EXT, get_thumbnail
 import shell
 import ipc
+import soft
 from views import VirtualDetails, ThumbView, LiteScroll
 
 SORTS = [("Name", "name"), ("Location", "path"), ("Size", "size"), ("Type", "type"),
@@ -30,6 +31,7 @@ def clip(s, n):
 
 class App(ctk.CTk):
     def __init__(self, args, settings):
+        theme.set_style(settings["ui_style"])
         ctk.set_appearance_mode(settings["theme"])
         ctk.set_default_color_theme("blue")
         super().__init__(fg_color=theme.root_bg(settings))
@@ -93,7 +95,8 @@ class App(ctk.CTk):
 
     def _late_init(self):
         self._startup()
-        self.ipc.start()
+        if not self.ipc.start():
+            self.after(2500, self.ipc.start)         # e.g. right after a restart, the old window may still be closing
         self.apply_tray()
         self.apply_hotkey()
         self.after(1000, self._poll)
@@ -102,7 +105,7 @@ class App(ctk.CTk):
         self.after(1500, self._first_run)
 
     def apply_glass(self):
-        mode = self.settings["glass"] if IS_WIN else "off"
+        mode = self.settings["glass"] if (IS_WIN and theme.STYLE == "glass") else "off"
         on = theme.apply_glass(self, mode, self.settings["opacity"]) if IS_WIN else False
         if not on:
             theme.win11_titlebar(self)
@@ -137,21 +140,40 @@ class App(ctk.CTk):
         self.after(40, self._pump)
 
     # =====================================================================  layout
+    def _panel(self, parent, radius=22, depth=7, pad=16, **kw):
+        """a raised soft panel (soft style) or a frosted glass panel; build the content in panel.body"""
+        if theme.STYLE == "soft":
+            return soft.SoftFrame(parent, radius=radius, depth=depth, pad=pad, **kw)
+        f = ctk.CTkFrame(parent, **theme.panel_kw(16), **kw)
+        f.body = f
+        return f
+
     def _round_btn(self, parent, text, cmd, tip=None):
+        if theme.STYLE == "soft":
+            return soft.SoftButton(parent, text, cmd, width=42, height=42, font_size=14, depth=4)
         return ctk.CTkButton(parent, text=text, width=44, height=44, corner_radius=22, fg_color=THEME["card"],
                              hover_color=THEME["hover"], text_color=THEME["text"], border_width=1,
                              border_color=THEME["stroke"], font=(FONT, 16), command=cmd)
 
     def _build_sidebar(self):
-        self.side_panel = ctk.CTkFrame(self, width=232, **theme.panel_kw())
-        self.side_panel.grid(row=0, column=0, sticky="nsw", padx=(12, 0), pady=12)
-        self.side_panel.grid_propagate(False)
-        self.side_panel.grid_rowconfigure(0, weight=1)
-        self.side_panel.grid_columnconfigure(0, weight=1)
-        self.sidebar = LiteScroll(self.side_panel)
-        self.sidebar.grid(row=0, column=0, sticky="nsew", padx=8, pady=10)
+        soft_style = theme.STYLE == "soft"
+        self.side_panel = self._panel(self, width=236) if soft_style else self._panel(self, width=232)
+        self.side_panel.grid(row=0, column=0, sticky="nsw", padx=(10, 0), pady=10)
+        if soft_style:
+            self.side_panel.pack_propagate(False)
+        else:
+            self.side_panel.grid_propagate(False)
+        b = self.side_panel.body
+        b.grid_rowconfigure(0, weight=1) if not soft_style else None
+        self.sidebar = LiteScroll(b)
+        if soft_style:
+            self.sidebar.pack(fill="both", expand=True)
+        else:
+            b.grid_columnconfigure(0, weight=1)
+            self.sidebar.grid(row=0, column=0, sticky="nsew", padx=8, pady=10)
 
     def _build_main(self):
+        soft_style = theme.STYLE == "soft"
         main = ctk.CTkFrame(self, fg_color="transparent")
         main.grid(row=0, column=1, sticky="nsew")
         main.grid_columnconfigure(0, weight=1)
@@ -159,91 +181,108 @@ class App(ctk.CTk):
         self.main = main
 
         self.tabbar = ctk.CTkFrame(main, fg_color="transparent", height=36)
-        self.tabbar.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 0))
+        self.tabbar.grid(row=0, column=0, sticky="ew", padx=14, pady=(8, 0))
 
         top = ctk.CTkFrame(main, fg_color="transparent")
-        top.grid(row=1, column=0, sticky="ew", padx=16, pady=(8, 8))
+        top.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 0))
         top.grid_columnconfigure(1, weight=1)
-        self._round_btn(top, "☰", self.toggle_sidebar).grid(row=0, column=0, padx=(0, 8))
-        self.entry = ctk.CTkEntry(top, height=44, corner_radius=22, border_width=1, fg_color=THEME["card"],
-                                  border_color=THEME["stroke"], text_color=THEME["text"],
-                                  placeholder_text="🔍  Search files and folders…   try  ext:pdf  size:>10mb  dm:today  !draft",
-                                  font=(FONT, 14))
-        self.entry.grid(row=0, column=1, sticky="ew")
+        self._round_btn(top, "☰", self.toggle_sidebar).grid(row=0, column=0, padx=(0, 4))
+        ph = "🔍  Search files and folders…   try  ext:pdf  size:>10mb  dm:today  !draft"
+        if soft_style:
+            self.search_box = soft.SoftEntry(top, ph)
+            self.entry = self.search_box.entry
+            self.search_box.grid(row=0, column=1, sticky="ew")
+        else:
+            self.entry = ctk.CTkEntry(top, height=44, corner_radius=22, border_width=1, fg_color=THEME["card"],
+                                      border_color=THEME["stroke"], text_color=THEME["text"],
+                                      placeholder_text=ph, font=(FONT, 14))
+            self.entry.grid(row=0, column=1, sticky="ew", padx=4)
         self.entry.bind("<KeyRelease>", self._key_release)
         self.entry.bind("<Return>", lambda e: (self._run_search(), self.settings.add_history(self.entry.get()), self.refresh_sidebar()))
         self.entry.bind("<Down>", lambda e: self.view.focus_first())
         self.tools_btn = self._round_btn(top, "⋯", self.tools_menu)
-        self.tools_btn.grid(row=0, column=2, padx=(8, 0))
+        self.tools_btn.grid(row=0, column=2, padx=(4, 0))
         self.view_btn = self._round_btn(top, "▦", self.view_menu)
-        self.view_btn.grid(row=0, column=3, padx=(8, 0))
-        self._round_btn(top, "◧", self.toggle_preview).grid(row=0, column=4, padx=(8, 0))
-        self._round_btn(top, "⟳", self.reindex).grid(row=0, column=5, padx=(8, 0))
-        self._round_btn(top, "◐", self.toggle_theme).grid(row=0, column=6, padx=(8, 0))
-        self._round_btn(top, "⚙", self.open_settings).grid(row=0, column=7, padx=(8, 0))
+        self.view_btn.grid(row=0, column=3, padx=(4, 0))
+        self._round_btn(top, "◧", self.toggle_preview).grid(row=0, column=4, padx=(4, 0))
+        self._round_btn(top, "⟳", self.reindex).grid(row=0, column=5, padx=(4, 0))
+        self._round_btn(top, "◐", self.toggle_theme).grid(row=0, column=6, padx=(4, 0))
+        self._round_btn(top, "⚙", self.open_settings).grid(row=0, column=7, padx=(4, 0))
 
         bar = ctk.CTkFrame(main, fg_color="transparent")
-        bar.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 8))
+        bar.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 2))
         self.seg_holder = ctk.CTkFrame(bar, fg_color="transparent")
         self.seg_holder.pack(side="left")
         self.seg = None
         self.refresh_categories(run=False)
         self.scope_btn = ctk.CTkButton(bar, text="", height=32, corner_radius=16, fg_color=THEME["accent"],
                                        hover_color=THEME["accent_hover"], font=(FONT, 12), command=self.clear_scope, width=10)
-        right = ctk.CTkFrame(bar, height=40, **theme.panel_kw(14))
+        right = self._panel(bar, radius=18, depth=4, pad=10) if soft_style else ctk.CTkFrame(bar, height=40, **theme.panel_kw(14))
         right.pack(side="right")
-        pad = dict(pady=5)
-        self.opt_btn = ctk.CTkButton(right, text="Options ▾", width=84, height=30, fg_color="transparent",
+        rb = right.body if soft_style else right
+        pad = dict(pady=0 if soft_style else 5)
+        flat = THEME["hover"]
+        self.opt_btn = ctk.CTkButton(rb, text="Options ▾", width=84, height=30, fg_color="transparent",
                                      hover_color=THEME["hover"], text_color=THEME["text"], font=(FONT, 12),
                                      command=self.options_menu)
         self.opt_btn.pack(side="right", padx=(2, 6), **pad)
-        self.dir_btn = ctk.CTkButton(right, text="", width=34, height=30, fg_color="transparent",
+        self.dir_btn = ctk.CTkButton(rb, text="", width=34, height=30, fg_color="transparent",
                                      hover_color=THEME["hover"], text_color=THEME["text"], font=(FONT, 13),
                                      command=self.toggle_sort_dir)
         self.dir_btn.pack(side="right", **pad)
-        self.sort_menu = ctk.CTkOptionMenu(right, values=[n for n, _ in SORTS], width=150, height=30,
-                                           font=(FONT, 12), fg_color=THEME["hover"], button_color=THEME["hover"],
+        self.sort_menu = ctk.CTkOptionMenu(rb, values=[n for n, _ in SORTS], width=150, height=30,
+                                           font=(FONT, 12), fg_color=flat, button_color=flat,
                                            button_hover_color=THEME["stroke"], text_color=THEME["text"],
                                            command=self._sort_menu_pick)
         self.sort_menu.pack(side="right", padx=4, **pad)
-        ctk.CTkLabel(right, text="Sort by", font=(FONT, 12), text_color=THEME["sub"]).pack(side="right", padx=(12, 2), **pad)
+        ctk.CTkLabel(rb, text="Sort by", font=(FONT, 12), text_color=THEME["sub"]).pack(side="right", padx=(12, 2), **pad)
         self._sync_sort_ui()
 
         body = ctk.CTkFrame(main, fg_color="transparent")
-        body.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 6))
+        body.grid(row=3, column=0, sticky="nsew", padx=6, pady=(0, 0))
         body.grid_columnconfigure(0, weight=1)
         body.grid_rowconfigure(0, weight=1)
-        self.card = ctk.CTkFrame(body, **theme.panel_kw())
+        self.card = self._panel(body, radius=22, depth=7, pad=14)
         self.card.grid(row=0, column=0, sticky="nsew")
-        self.card.grid_columnconfigure(0, weight=1)
-        self.card.grid_rowconfigure(0, weight=1)
+        cb = self.card.body
+        if soft_style:
+            self.card_host = cb
+        else:
+            cb.grid_columnconfigure(0, weight=1)
+            cb.grid_rowconfigure(0, weight=1)
+            self.card_host = cb
         self._build_preview(body)
 
-        pill = ctk.CTkFrame(main, height=28, **theme.panel_kw(14))
-        pill.grid(row=4, column=0, sticky="w", padx=16, pady=(0, 12))
-        self.status = ctk.CTkLabel(pill, text="Starting…", anchor="w", font=(FONT, 12), text_color=THEME["sub"])
-        self.status.pack(padx=14, pady=3)
+        pill = self._panel(main, radius=16, depth=4, pad=9)
+        pill.grid(row=4, column=0, sticky="w", padx=14, pady=(0, 6))
+        self.status = ctk.CTkLabel(pill.body, text="Starting…", anchor="w", font=(FONT, 12), text_color=THEME["sub"])
+        self.status.pack(padx=12, pady=2)
 
     def _build_preview(self, body):
-        pf = ctk.CTkFrame(body, width=300, **theme.panel_kw())
-        pf.grid_propagate(False)
-        pf.grid_columnconfigure(0, weight=1)
-        pf.grid_rowconfigure(3, weight=1)
+        soft_style = theme.STYLE == "soft"
+        pf = self._panel(body, radius=22, depth=7, pad=14, width=300 if soft_style else 300)
+        if soft_style:
+            pf.pack_propagate(False)
+        else:
+            pf.grid_propagate(False)
         self.pf = pf
-        self.p_icon = ctk.CTkLabel(pf, text="🔍", font=(FONT, 54), text_color=THEME["sub"])
-        self.p_icon.grid(row=0, column=0, pady=(22, 8))
-        self.p_thumb = ctk.CTkLabel(pf, text="")
-        self.p_thumb.grid(row=0, column=0, pady=(14, 8))
+        b = pf.body
+        b.grid_columnconfigure(0, weight=1)
+        b.grid_rowconfigure(3, weight=1)
+        self.p_icon = ctk.CTkLabel(b, text="🔍", font=(FONT, 54), text_color=THEME["sub"])
+        self.p_icon.grid(row=0, column=0, pady=(16, 8))
+        self.p_thumb = ctk.CTkLabel(b, text="")
+        self.p_thumb.grid(row=0, column=0, pady=(10, 8))
         self.p_thumb.grid_remove()
-        self.p_name = ctk.CTkLabel(pf, text="Select a file to preview", wraplength=262, font=(FONT, 14, "bold"),
+        self.p_name = ctk.CTkLabel(b, text="Select a file to preview", wraplength=262, font=(FONT, 14, "bold"),
                                    text_color=THEME["text"])
-        self.p_name.grid(row=1, column=0, padx=16, pady=(0, 4))
-        self.p_meta = ctk.CTkLabel(pf, text="", wraplength=262, justify="left", anchor="w", font=(FONT, 12),
+        self.p_name.grid(row=1, column=0, padx=10, pady=(0, 4))
+        self.p_meta = ctk.CTkLabel(b, text="", wraplength=262, justify="left", anchor="w", font=(FONT, 12),
                                    text_color=THEME["sub"])
-        self.p_meta.grid(row=2, column=0, padx=16, sticky="w")
-        self.p_text = ctk.CTkTextbox(pf, wrap="word", font=("Consolas" if IS_WIN else "Courier", 11),
-                                     fg_color=THEME["bg"], text_color=THEME["text"], corner_radius=8)
-        self.p_text.grid(row=3, column=0, padx=12, pady=12, sticky="nsew")
+        self.p_meta.grid(row=2, column=0, padx=10, sticky="w")
+        self.p_text = ctk.CTkTextbox(b, wrap="word", font=("Consolas" if IS_WIN else "Courier", 11),
+                                     fg_color=THEME["hover"], text_color=THEME["text"], corner_radius=12)
+        self.p_text.grid(row=3, column=0, padx=4, pady=10, sticky="nsew")
         self.p_text.grid_remove()
 
     def _bind_keys(self):
@@ -268,11 +307,14 @@ class App(ctk.CTk):
             self.seg.destroy()
         if self.category not in self.cats:
             self.category = "All"
-        self.seg = ctk.CTkSegmentedButton(self.seg_holder, values=list(self.cats), command=self.set_category,
-                                          font=(FONT, 12), corner_radius=14, height=34,
-                                          selected_color=THEME["accent"], selected_hover_color=THEME["accent_hover"],
-                                          unselected_color=THEME["card"], unselected_hover_color=THEME["hover"],
-                                          text_color=THEME["text"], fg_color=THEME["card"], border_width=3)
+        if theme.STYLE == "soft":
+            self.seg = soft.Chips(self.seg_holder, list(self.cats), self.set_category)
+        else:
+            self.seg = ctk.CTkSegmentedButton(self.seg_holder, values=list(self.cats), command=self.set_category,
+                                              font=(FONT, 12), corner_radius=14, height=34,
+                                              selected_color=THEME["accent"], selected_hover_color=THEME["accent_hover"],
+                                              unselected_color=THEME["card"], unselected_hover_color=THEME["hover"],
+                                              text_color=THEME["text"], fg_color=THEME["card"], border_width=3)
         self.seg.set(self.category)
         self.seg.pack()
         if run:
@@ -362,21 +404,38 @@ class App(ctk.CTk):
     def _rebuild_tabs(self):
         for w in self.tabbar.winfo_children():
             w.destroy()
+        soft_style = theme.STYLE == "soft"
+        if soft_style:
+            import tkinter.font as tkfont
+            f = tkfont.Font(family=FONT, size=11)
         for i, t in enumerate(self.tabs):
             on = i == self.cur
+            title = clip(t["title"], 24)
+            if soft_style:
+                fr = ctk.CTkFrame(self.tabbar, fg_color="transparent")
+                fr.pack(side="left", padx=(0, 2))
+                soft.SoftButton(fr, title, lambda i=i: self.switch_tab(i), width=f.measure(title) + 34, height=32,
+                                variant="inset" if on else "raised", font_size=11, depth=3).pack(side="left")
+                if len(self.tabs) > 1:
+                    ctk.CTkButton(fr, text="✕", width=22, height=22, fg_color="transparent", hover_color=THEME["stroke"],
+                                  text_color=THEME["sub"], font=(FONT, 11), command=lambda i=i: self.close_tab(i)).pack(side="left")
+                continue
             fr = ctk.CTkFrame(self.tabbar, corner_radius=12, fg_color=THEME["card"] if on else THEME["hover"],
                               border_width=1, border_color=THEME["stroke"])
             fr.pack(side="left", padx=(0, 4))
-            ctk.CTkButton(fr, text=clip(t["title"], 24), width=10, height=28, fg_color="transparent",
+            ctk.CTkButton(fr, text=title, width=10, height=28, fg_color="transparent",
                           hover_color=THEME["hover"] if on else THEME["stroke"], text_color=THEME["text"] if on else THEME["sub"],
                           font=(FONT, 12), command=lambda i=i: self.switch_tab(i)).pack(side="left", padx=(4, 0))
             if len(self.tabs) > 1:
                 ctk.CTkButton(fr, text="✕", width=22, height=22, fg_color="transparent", hover_color=THEME["stroke"],
                               text_color=THEME["sub"], font=(FONT, 11),
                               command=lambda i=i: self.close_tab(i)).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(self.tabbar, text="＋", width=32, height=30, corner_radius=12, fg_color=THEME["hover"],
-                      hover_color=THEME["stroke"], text_color=THEME["text"], font=(FONT, 15),
-                      command=self.new_tab).pack(side="left")
+        if soft_style:
+            soft.SoftButton(self.tabbar, "+", self.new_tab, width=30, height=30, font_size=14, depth=3).pack(side="left")
+        else:
+            ctk.CTkButton(self.tabbar, text="＋", width=32, height=30, corner_radius=12, fg_color=THEME["hover"],
+                          hover_color=THEME["stroke"], text_color=THEME["text"], font=(FONT, 15),
+                          command=self.new_tab).pack(side="left")
 
     def _tab_title(self):
         q = self.entry.get().strip()
@@ -512,10 +571,13 @@ class App(ctk.CTk):
             self.settings["view"] = mode
             self.settings.save()
         if mode == "details":
-            self.view = VirtualDetails(self.card, self)
+            self.view = VirtualDetails(self.card_host, self)
         else:
-            self.view = ThumbView(self.card, self, THUMB[mode])
-        self.view.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+            self.view = ThumbView(self.card_host, self, THUMB[mode])
+        if theme.STYLE == "soft":
+            self.view.pack(fill="both", expand=True)
+        else:
+            self.view.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         self.view.set_sort(self.sort_key, self.sort_rev)
         self.view.empty_text = self._empty_text()
         if not rebuild_only:
@@ -560,9 +622,11 @@ class App(ctk.CTk):
         ctk.set_appearance_mode(mode)
         self.settings["theme"] = mode
         self.settings.save()
+        soft.restyle_all()
         self.view.restyle()
         self.apply_glass()
         self.refresh_sidebar()
+        self._rebuild_tabs()
         for w in (self.dup_win, self.settings_win):
             if w is not None and w.winfo_exists():
                 theme.win11_titlebar(w)

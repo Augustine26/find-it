@@ -59,13 +59,13 @@ class SettingsWindow(ctk.CTkToplevel):
         row.pack(fill="x", pady=4, padx=4)
         ctk.CTkLabel(row, text=label, font=(FONT, 13), text_color=THEME["text"], width=210, anchor="w").pack(side="left")
         m = ctk.CTkOptionMenu(row, values=values, command=cmd, width=220, font=(FONT, 12),
-                              fg_color=THEME["bg"], button_color=THEME["stroke"], text_color=THEME["text"])
+                              fg_color=THEME["hover"], button_color=THEME["stroke"], text_color=THEME["text"])
         m.set(current)
         m.pack(side="left")
 
     def _button(self, parent, text, cmd, danger=False):
         b = ctk.CTkButton(parent, text=text, command=cmd, height=34, font=(FONT, 12),
-                          fg_color=THEME["danger"] if danger else THEME["bg"],
+                          fg_color=THEME["danger"] if danger else THEME["hover"],
                           hover_color="#A52318" if danger else THEME["stroke"],
                           text_color="white" if danger else THEME["text"], border_width=1, border_color=THEME["stroke"])
         b.pack(anchor="w", padx=8, pady=4)
@@ -78,6 +78,9 @@ class SettingsWindow(ctk.CTkToplevel):
         names = {"system": "System", "light": "Light", "dark": "Dark"}
         self._menu(p, "Theme", list(names.values()), names.get(self.s["theme"], "System"),
                    lambda v: a.apply_theme(v.lower()))
+        ds = {"soft": "Soft (embossed)", "glass": "Glass (blurred)"}
+        self._menu(p, "Design", list(ds.values()), ds.get(self.s["ui_style"], ds["soft"]),
+                   lambda v: self._design({x: k for k, x in ds.items()}[v]))
         if IS_WIN:
             gl = {"off": "Off", "acrylic": "Acrylic (frosted glass)", "mica": "Mica (soft tint)"}
             self._menu(p, "Glass effect", list(gl.values()), gl.get(self.s["glass"], gl["acrylic"]),
@@ -111,6 +114,12 @@ class SettingsWindow(ctk.CTkToplevel):
         self._note(p, "Automatic: with administrator mode on NTFS drives FindIt re-reads the whole PC in seconds every start. "
                       "Otherwise it uses the saved index and refreshes only when it is more than 12 hours old, "
                       "while Live updates keeps it current.")
+
+    def _design(self, style):
+        self._set("ui_style", style)
+        if messagebox.askyesno("FindIt", "The new design needs a restart.\nRestart FindIt now?", parent=self):
+            self.app._quit()
+            shell.new_window()
 
     def _set(self, k, v):
         self.s[k] = v
@@ -193,7 +202,7 @@ class SettingsWindow(ctk.CTkToplevel):
         for w in box.winfo_children():
             w.destroy()
         for it in items:
-            r = ctk.CTkFrame(box, fg_color=THEME["bg"], corner_radius=6)
+            r = ctk.CTkFrame(box, fg_color=THEME["hover"], corner_radius=10)
             r.pack(fill="x", padx=8, pady=2)
             ctk.CTkLabel(r, text=fmt(it), font=(FONT, 12), text_color=THEME["text"], anchor="w").pack(side="left", padx=8, pady=4)
             ctk.CTkButton(r, text="✕", width=28, height=24, fg_color="transparent", hover_color=THEME["stroke"],
